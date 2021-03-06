@@ -167,7 +167,6 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> DerivationInternalFns
         let should_update = self.should_update.get() || changed;
         self.should_update.set(should_update);
         if nsn == 0 && should_update {
-            drop(self);
             self.update();
         }
     }
