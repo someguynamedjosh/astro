@@ -1,9 +1,13 @@
 #![feature(arc_new_cyclic)]
+#![feature(unsize)]
+#![feature(coerce_unsized)]
+
+mod ptr;
 
 use crossbeam::atomic::AtomicCell;
+use ptr::{ThinPtr, WeakThinPtr};
 use std::{
     cell::{Cell, Ref, RefCell},
-    rc::{Rc, Weak},
     thread::{self, ThreadId},
 };
 
@@ -15,7 +19,7 @@ static MAIN_THREAD: AtomicCell<Option<ThreadId>> = AtomicCell::new(None);
 // https://stackoverflow.com/questions/37060330/safe-way-to-push-the-local-value-into-a-static-mut
 // static mut is safe if you are only ever accessing it from a single thread and if it is impossible
 // to hold more than one mutable reference at a time, check for reentrance!
-static mut OBSERVING_STACK: Vec<Vec<Rc<dyn ObservableInternalFns>>> = Vec::new();
+static mut OBSERVING_STACK: Vec<Vec<ThinPtr<dyn ObservableInternalFns>>> = Vec::new();
 
 pub fn init() {
     if MAIN_THREAD.load().is_some() {
@@ -57,7 +61,7 @@ fn push_observing_stack() {
     unsafe { OBSERVING_STACK.push(Vec::new()) }
 }
 
-fn note_observed(observable: Rc<dyn ObservableInternalFns>) {
+fn note_observed(observable: ThinPtr<dyn ObservableInternalFns>) {
     assert_static_state_access();
     if let Some(item) = unsafe { OBSERVING_STACK.last_mut() } {
         item.push(observable);
@@ -68,7 +72,7 @@ fn note_observed(observable: Rc<dyn ObservableInternalFns>) {
     }
 }
 
-fn pop_observing_stack() -> Vec<Rc<dyn ObservableInternalFns>> {
+fn pop_observing_stack() -> Vec<ThinPtr<dyn ObservableInternalFns>> {
     assert_static_state_access();
     let top = unsafe { OBSERVING_STACK.pop() };
     if let Some(value) = top {
@@ -82,14 +86,14 @@ fn pop_observing_stack() -> Vec<Rc<dyn ObservableInternalFns>> {
 /// changes. Used by both Observable and Derivation.
 #[derive(Default)]
 struct ObserverList {
-    observers: Cell<Vec<Weak<dyn DerivationInternalFns>>>,
+    observers: Cell<Vec<WeakThinPtr<dyn DerivationInternalFns>>>,
 }
 
 impl ObserverList {
     fn broadcast_stale(&self) {
         let list = self.observers.take();
         for observer in &list {
-            observer.upgrade().map(|v| v.send_stale());
+            unsafe { observer.deref() }.send_stale();
         }
         self.observers.set(list);
     }
@@ -97,20 +101,22 @@ impl ObserverList {
     fn broadcast_ready(&self, changed: bool) {
         let list = self.observers.take();
         for observer in &list {
-            observer.upgrade().map(|v| v.send_ready(changed));
+            unsafe { observer.deref() }.send_ready(changed);
         }
         self.observers.set(list);
     }
 
-    fn subscribe(&self, observer: Weak<dyn DerivationInternalFns>) {
+    fn subscribe(&self, observer: WeakThinPtr<dyn DerivationInternalFns>) {
         let mut list = self.observers.take();
         list.push(observer);
         self.observers.set(list);
     }
 
-    fn unsubscribe(&self, observer: &Weak<dyn DerivationInternalFns>) {
+    fn unsubscribe(&self, observer: &WeakThinPtr<dyn DerivationInternalFns>) {
         let mut list = self.observers.take();
-        let index = list.iter().position(|item| Weak::ptr_eq(item, observer));
+        let index = list
+            .iter()
+            .position(|item| WeakThinPtr::ptr_eq(item, observer));
         let index = index.expect(
             "(Internal error) Tried to unsubscribe a derivation that was already unsubscribed.",
         );
@@ -120,8 +126,8 @@ impl ObserverList {
 }
 
 trait ObservableInternalFns {
-    fn subscribe(&self, derivation: Weak<dyn DerivationInternalFns>);
-    fn unsubscribe(&self, derivation: &Weak<dyn DerivationInternalFns>);
+    fn subscribe(&self, derivation: WeakThinPtr<dyn DerivationInternalFns>);
+    fn unsubscribe(&self, derivation: &WeakThinPtr<dyn DerivationInternalFns>);
 }
 
 trait DerivationInternalFns {
@@ -132,10 +138,10 @@ trait DerivationInternalFns {
 
 #[repr(C)]
 struct DerivationBox<T: PartialEq + 'static, F: FnMut() -> T + 'static> {
-    this_ptr: Weak<dyn DerivationInternalFns>,
+    this_ptr: WeakThinPtr<dyn DerivationInternalFns>,
     num_stale_notifications: Cell<usize>,
     observers: ObserverList,
-    observing: Cell<Vec<Rc<dyn ObservableInternalFns>>>,
+    observing: Cell<Vec<ThinPtr<dyn ObservableInternalFns>>>,
     /// True if fields we are observing have changed and we need to update once
     /// num_stale_notifications reaches zero.
     should_update: Cell<bool>,
@@ -178,7 +184,7 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> DerivationInternalFns
             // If we are no longer observing something we used to...
             if !now_observing
                 .iter()
-                .any(|other| Rc::ptr_eq(observable, other))
+                .any(|other| ThinPtr::ptr_eq(observable, other))
             {
                 observable.unsubscribe(&self.this_ptr)
             }
@@ -194,18 +200,18 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> DerivationInternalFns
 }
 
 impl<T: PartialEq, F: FnMut() -> T> ObservableInternalFns for DerivationBox<T, F> {
-    fn subscribe(&self, derivation: Weak<dyn DerivationInternalFns>) {
+    fn subscribe(&self, derivation: WeakThinPtr<dyn DerivationInternalFns>) {
         self.observers.subscribe(derivation);
     }
 
-    fn unsubscribe(&self, derivation: &Weak<dyn DerivationInternalFns>) {
+    fn unsubscribe(&self, derivation: &WeakThinPtr<dyn DerivationInternalFns>) {
         self.observers.unsubscribe(derivation);
     }
 }
 
 #[derive(Clone)]
 pub struct Derivation<T: PartialEq + 'static, F: FnMut() -> T + 'static> {
-    ptr: Rc<DerivationBox<T, F>>,
+    ptr: ThinPtr<DerivationBox<T, F>>,
 }
 
 impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> Derivation<T, F> {
@@ -213,8 +219,8 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> Derivation<T, F> {
         push_observing_stack();
         let initial_value = compute_value();
         let observing = pop_observing_stack();
-        let ptr = Rc::new_cyclic(|weak| DerivationBox {
-            this_ptr: Weak::clone(weak) as _,
+        let ptr = ThinPtr::new_cyclic(|weak| DerivationBox {
+            this_ptr: WeakThinPtr::clone(weak) as _,
             num_stale_notifications: Cell::new(0),
             observers: Default::default(),
             observing: Cell::new(observing.clone()),
@@ -223,7 +229,7 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> Derivation<T, F> {
             value: RefCell::new(initial_value),
         });
         for observable in &observing {
-            observable.subscribe(Rc::downgrade(&ptr) as _);
+            observable.subscribe(ThinPtr::downgrade(&ptr) as _);
         }
         Self { ptr }
     }
@@ -233,7 +239,7 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> Derivation<T, F> {
     }
 
     pub fn borrow(&self) -> Ref<T> {
-        note_observed(Rc::clone(&self.ptr) as _);
+        note_observed(ThinPtr::clone(&self.ptr) as _);
         self.ptr.value.borrow()
     }
 
@@ -249,18 +255,18 @@ struct ObservableBox<T: ?Sized> {
 }
 
 impl<T: PartialEq> ObservableInternalFns for ObservableBox<T> {
-    fn subscribe(&self, derivation: Weak<dyn DerivationInternalFns>) {
+    fn subscribe(&self, derivation: WeakThinPtr<dyn DerivationInternalFns>) {
         self.observers.subscribe(derivation);
     }
 
-    fn unsubscribe(&self, derivation: &Weak<dyn DerivationInternalFns>) {
+    fn unsubscribe(&self, derivation: &WeakThinPtr<dyn DerivationInternalFns>) {
         self.observers.unsubscribe(derivation);
     }
 }
 
 #[derive(Clone)]
 pub struct Observable<T: ?Sized + PartialEq + 'static> {
-    ptr: Rc<ObservableBox<T>>,
+    ptr: ThinPtr<ObservableBox<T>>,
 }
 
 impl<T: PartialEq + 'static> Observable<T> {
@@ -269,12 +275,12 @@ impl<T: PartialEq + 'static> Observable<T> {
             observers: Default::default(),
             value: RefCell::new(value),
         };
-        let ptr = Rc::new(bx);
+        let ptr = ThinPtr::new(bx);
         Self { ptr }
     }
 
     pub fn borrow(&self) -> Ref<T> {
-        note_observed(Rc::clone(&self.ptr) as _);
+        note_observed(ThinPtr::clone(&self.ptr) as _);
         self.ptr.value.borrow()
     }
 
@@ -361,8 +367,8 @@ mod tests {
             })
             .collect();
 
-        let num_updates = Rc::new(Cell::new(0));
-        let num_updates2 = Rc::clone(&num_updates);
+        let num_updates = ThinPtr::new(Cell::new(0));
+        let num_updates2 = ThinPtr::clone(&num_updates);
         let result = Derivation::new(move || {
             num_updates.set(num_updates.get() + 1);
             intermediates
