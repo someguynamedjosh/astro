@@ -111,6 +111,11 @@ impl<T: ?Sized> ThinPtr<T> {
         }
         WeakThinPtr(self.0)
     }
+
+    pub(crate) fn get_raw_ptr(&self) -> NonNull<T> {
+        let ptr = unsafe { std::ptr::addr_of_mut!((*self.0.as_ptr()).value) };
+        unsafe { NonNull::new_unchecked(ptr) }
+    }
 }
 
 impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<ThinPtr<U>> for ThinPtr<T> {}
