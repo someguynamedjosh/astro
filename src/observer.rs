@@ -135,9 +135,16 @@ impl<T: PartialEq, F: FnMut() -> T> ObservableInternalFns for DerivationData<T, 
     }
 }
 
-#[derive(Clone)]
 pub struct DerivationPtr<T: PartialEq + 'static, F: FnMut() -> T + 'static> {
     ptr: ThinPtr<DerivationData<T, F>>,
+}
+
+impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> Clone for DerivationPtr<T, F> {
+    fn clone(&self) -> Self {
+        Self {
+            ptr: ThinPtr::clone(&self.ptr),
+        }
+    }
 }
 
 impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> DerivationPtr<T, F> {

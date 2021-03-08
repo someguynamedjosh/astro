@@ -71,6 +71,7 @@ impl<T: ?Sized> PtrTarget<T> {
     }
 }
 
+/// Like Rc<>, but does not keep track of weak references so dereferencing WeakThinPtr<> is unsafe.
 pub(crate) struct ThinPtr<T: ?Sized>(NonNull<PtrTarget<T>>);
 
 impl<T> ThinPtr<T> {

@@ -123,3 +123,19 @@ fn update_through_mut_ref() {
     *value2.borrow_mut() = 42;
     assert_eq!(*derived.borrow_untracked(), 43);
 }
+
+#[test]
+fn ptr_clone_macro() {
+    let value = ObservablePtr::new(123);
+    struct Holder {
+        value: ObservablePtr<i32>,
+    }
+    let holder = Holder { value };
+    let derived = {
+        ptr_clone!(holder.value);
+        DerivationPtr::new(move || *value.borrow())
+    };
+    assert_eq!(*derived.borrow_untracked(), 123);
+    holder.value.set(42);
+    assert_eq!(*derived.borrow_untracked(), 42);
+}

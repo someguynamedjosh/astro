@@ -40,9 +40,16 @@ impl<T: PartialEq> ObservableInternalFns for ObservableData<T> {
     }
 }
 
-#[derive(Clone)]
 pub struct ObservablePtr<T: ?Sized + PartialEq + 'static> {
     ptr: ThinPtr<ObservableData<T>>,
+}
+
+impl<T: ?Sized + PartialEq + 'static> Clone for ObservablePtr<T> {
+    fn clone(&self) -> Self {
+        Self {
+            ptr: ThinPtr::clone(&self.ptr),
+        }
+    }
 }
 
 #[derive(Clone)]

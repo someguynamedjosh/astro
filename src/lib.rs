@@ -5,6 +5,7 @@
 mod observable;
 mod observer;
 mod ptr;
+mod ptr_util;
 mod static_state;
 mod tests;
 
