@@ -1,5 +1,6 @@
 use crate::{DerivationPtr, ObservablePtr};
 
+#[doc(hidden)]
 pub trait PtrUtil {
     fn ptr_clone(&self) -> Self;
 }
@@ -17,6 +18,7 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> PtrUtil for DerivationPt
 }
 
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __expr_result_name {
     ($plain:ident) => {
         $plain
@@ -62,32 +64,35 @@ macro_rules! __expr_result_name {
 }
 
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __ptr_clone_line {
     ($name:ident : $($ex:tt)*) => {
-        let $name = crate::ptr_util::PtrUtil::ptr_clone(&$($ex)*);
+        let $name = $crate::ptr_util::PtrUtil::ptr_clone(&$($ex)*);
     };
     ($($ex:tt)*) => {
-        let __expr_result_name!($($ex)*) = crate::ptr_util::PtrUtil::ptr_clone(&$($ex)*);
+        let $crate::__expr_result_name!($($ex)*) = $crate::ptr_util::PtrUtil::ptr_clone(&$($ex)*);
     };
 }
 
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __ptr_clone {
     ($(($($ex:tt)*)),+) => {
-        $(__ptr_clone_line!($($ex)*);)+
+        $($crate::__ptr_clone_line!($($ex)*);)+
     };
 }
 
 #[macro_export]
+#[doc(hidden)]
 macro_rules! __ptr_clone_parse {
     ([$($args:tt)*], ($($wip:tt)*), , $($rest:tt)*) => {
-        __ptr_clone_parse!([$($args)* ($($wip)*)], (), $($rest)*)
+        $crate::__ptr_clone_parse!([$($args)* ($($wip)*)], (), $($rest)*)
     };
     ([$($args:tt)*], ($($wip:tt)*), $next:tt $($rest:tt)*) => {
-        __ptr_clone_parse!([$($args)*], ($($wip)*$next), $($rest)*)
+        $crate::__ptr_clone_parse!([$($args)*], ($($wip)*$next), $($rest)*)
     };
     ([$($args:tt)*], ($($wip:tt)*),) => {
-        __ptr_clone!(($($wip)*) $(,$args)*)
+        $crate::__ptr_clone!(($($wip)*) $(,$args)*)
     };
 }
 
@@ -95,6 +100,6 @@ macro_rules! __ptr_clone_parse {
 macro_rules! ptr_clone {
     () => {};
     ($($ex:tt)+) => {
-        __ptr_clone_parse!([], (), $($ex)+)
+        $crate::__ptr_clone_parse!([], (), $($ex)+)
     }
 }
