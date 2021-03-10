@@ -62,9 +62,19 @@ macro_rules! __expr_result_name {
 }
 
 #[macro_export]
+macro_rules! __ptr_clone_line {
+    ($name:ident : $($ex:tt)*) => {
+        let $name = crate::ptr_util::PtrUtil::ptr_clone(&$($ex)*);
+    };
+    ($($ex:tt)*) => {
+        let __expr_result_name!($($ex)*) = crate::ptr_util::PtrUtil::ptr_clone(&$($ex)*);
+    };
+}
+
+#[macro_export]
 macro_rules! __ptr_clone {
     ($(($($ex:tt)*)),+) => {
-        $(let __expr_result_name!($($ex)*) = crate::ptr_util::PtrUtil::ptr_clone(&$($ex)*);)+
+        $(__ptr_clone_line!($($ex)*);)+
     };
 }
 
@@ -83,6 +93,7 @@ macro_rules! __ptr_clone_parse {
 
 #[macro_export]
 macro_rules! ptr_clone {
+    () => {};
     ($($ex:tt)+) => {
         __ptr_clone_parse!([], (), $($ex)+)
     }

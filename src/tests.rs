@@ -11,7 +11,7 @@ fn init_if_needed() {
 
 #[test]
 fn shared_ptr_behavior() {
-    let value = ObservablePtr::new(123);
+    let value = observable(123);
     assert_eq!(*value.borrow_untracked(), 123);
     let value2 = ObservablePtr::clone(&value);
     assert_eq!(*value2.borrow_untracked(), 123);
@@ -24,57 +24,49 @@ fn shared_ptr_behavior() {
 #[test]
 fn update_immediate_derivation() {
     init_if_needed();
-    let value = ObservablePtr::new(123);
-    let value2 = ObservablePtr::clone(&value);
-    let derived = DerivationPtr::new(move || *value.borrow() + 1);
+    let value = observable(123);
+    let derived = derivation_with_ptrs!(value; *value.borrow() + 1);
     assert_eq!(*derived.borrow_untracked(), 124);
-    value2.set(42);
+    value.set(42);
     assert_eq!(*derived.borrow_untracked(), 43);
 }
 
 #[test]
 fn update_chained_derivation() {
     init_if_needed();
-    let value = ObservablePtr::new(0);
-    let value2 = ObservablePtr::clone(&value);
-    let deriveda1 = DerivationPtr::new(move || *value.borrow() + 1);
-    let deriveda2 = DerivationPtr::clone(&deriveda1);
-    let derivedb = DerivationPtr::new(move || *deriveda1.borrow() + 1);
+    let value = observable(0);
+    let deriveda = derivation_with_ptrs!(value; *value.borrow() + 1);
+    let derivedb = derivation_with_ptrs!(deriveda; *deriveda.borrow() + 1);
 
-    assert_eq!(*value2.borrow_untracked(), 0);
-    assert_eq!(*deriveda2.borrow_untracked(), 1);
+    assert_eq!(*value.borrow_untracked(), 0);
+    assert_eq!(*deriveda.borrow_untracked(), 1);
     assert_eq!(*derivedb.borrow_untracked(), 2);
 
-    value2.set(10);
+    value.set(10);
 
-    assert_eq!(*value2.borrow_untracked(), 10);
-    assert_eq!(*deriveda2.borrow_untracked(), 11);
+    assert_eq!(*value.borrow_untracked(), 10);
+    assert_eq!(*deriveda.borrow_untracked(), 11);
     assert_eq!(*derivedb.borrow_untracked(), 12);
 }
 
 #[test]
 fn subscribe_then_drop() {
     init_if_needed();
-    let value = ObservablePtr::new(0);
-    let value2 = ObservablePtr::clone(&value);
-    let deriveda1 = DerivationPtr::new(move || *value.borrow() + 1);
-    let deriveda2 = DerivationPtr::clone(&deriveda1);
-    let derivedb = DerivationPtr::new(move || *deriveda1.borrow() + 1);
+    let value = observable(0);
+    let deriveda = derivation_with_ptrs!(value; *value.borrow() + 1);
+    let derivedb = derivation_with_ptrs!(deriveda; *deriveda.borrow() + 1);
     drop(derivedb);
-    value2.set(10);
-    assert_eq!(*deriveda2.borrow_untracked(), 11);
+    value.set(10);
+    assert_eq!(*deriveda.borrow_untracked(), 11);
 }
 
 #[test]
 fn update_only_once() {
     init_if_needed();
-    let base = ObservablePtr::new(0);
+    let base = observable(0);
 
     let intermediates: Vec<_> = (1..9)
-        .map(|index| {
-            let base2 = ObservablePtr::clone(&base);
-            DerivationPtr::new(move || *base2.borrow() + index)
-        })
+        .map(|index| derivation_with_ptrs!(base; *base.borrow() + index))
         .collect();
 
     let num_updates = Rc::new(Cell::new(0));
@@ -97,14 +89,12 @@ fn update_only_once() {
 #[test]
 fn conditionally_observe_second_observable() {
     init_if_needed();
-    let condition = ObservablePtr::new(false);
-    let condition2 = ObservablePtr::clone(&condition);
-    let second = ObservablePtr::new(10);
-    let second2 = ObservablePtr::clone(&second);
+    let condition = observable(false);
+    let second = observable(10);
 
     let num_updates = Rc::new(Cell::new(0));
     let num_updates2 = Rc::clone(&num_updates);
-    let result = DerivationPtr::new(move || {
+    let result = derivation_with_ptrs!(condition, second; {
         num_updates.set(num_updates.get() + 1);
         if *condition.borrow() {
             *second.borrow()
@@ -115,13 +105,13 @@ fn conditionally_observe_second_observable() {
 
     assert_eq!(num_updates2.get(), 1);
     assert_eq!(*result.borrow_untracked(), 0);
-    second2.set(15);
+    second.set(15);
     assert_eq!(num_updates2.get(), 1);
     assert_eq!(*result.borrow_untracked(), 0);
-    condition2.set(true);
+    condition.set(true);
     assert_eq!(num_updates2.get(), 2);
     assert_eq!(*result.borrow_untracked(), 15);
-    second2.set(5);
+    second.set(5);
     assert_eq!(num_updates2.get(), 3);
     assert_eq!(*result.borrow_untracked(), 5);
 }
@@ -129,7 +119,7 @@ fn conditionally_observe_second_observable() {
 #[test]
 fn fork_and_join() {
     init_if_needed();
-    let value = ObservablePtr::new(123);
+    let value = observable(123);
 
     let left = {
         ptr_clone!(value);
@@ -163,7 +153,7 @@ fn fork_and_join() {
 #[test]
 fn update_through_mut_ref() {
     init_if_needed();
-    let value = ObservablePtr::new(123);
+    let value = observable(123);
     let value2 = ObservablePtr::clone(&value);
     let derived = DerivationPtr::new(move || *value.borrow() + 1);
     assert_eq!(*derived.borrow_untracked(), 124);
@@ -173,7 +163,7 @@ fn update_through_mut_ref() {
 
 #[test]
 fn ptr_clone_macro() {
-    let value = ObservablePtr::new(123);
+    let value = observable(123);
     struct Holder {
         value: ObservablePtr<i32>,
     }

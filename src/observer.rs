@@ -196,7 +196,7 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> DerivationPtr<T, F> {
         Self { ptr }
     }
 
-    pub fn new_boxed(compute_value: F) -> DerivationPtr<T, Box<dyn FnMut() -> T + 'static>> {
+    pub fn new_dyn(compute_value: F) -> DerivationPtr<T, Box<dyn FnMut() -> T + 'static>> {
         let f = Box::new(compute_value) as _;
         DerivationPtr::new(f)
     }
