@@ -1,26 +1,23 @@
 use crate::{
     observer::{ObserverInternalFns, ObserverList},
-    ptr::{ThinPtr, WeakThinPtr},
     static_state,
 };
 use std::{
-    cell::{Cell, UnsafeCell},
-    marker::PhantomData,
+    cell::{Ref, RefCell, RefMut},
     ops::{Deref, DerefMut},
-    ptr::NonNull,
+    rc::{Rc, Weak},
 };
 
 pub(crate) trait ObservableInternalFns {
-    fn add_observer(&self, observer: WeakThinPtr<dyn ObserverInternalFns>);
-    fn remove_observer(&self, observer: &WeakThinPtr<dyn ObserverInternalFns>);
+    fn add_observer(&self, observer: Weak<dyn ObserverInternalFns>);
+    fn remove_observer(&self, observer: &Weak<dyn ObserverInternalFns>);
+    fn get_unique_data_address(&self) -> *const ();
 }
 
 #[repr(C)]
 struct ObservableData<T: ?Sized> {
     observers: ObserverList,
-    immutable_refs: Cell<usize>,
-    mutable_ref: Cell<bool>,
-    value: UnsafeCell<T>,
+    value: RefCell<T>,
 }
 
 impl<T: ?Sized> ObservableData<T> {
@@ -31,100 +28,70 @@ impl<T: ?Sized> ObservableData<T> {
 }
 
 impl<T: PartialEq> ObservableInternalFns for ObservableData<T> {
-    fn add_observer(&self, observer: WeakThinPtr<dyn ObserverInternalFns>) {
+    fn add_observer(&self, observer: Weak<dyn ObserverInternalFns>) {
         self.observers.add(observer);
     }
 
-    fn remove_observer(&self, observer: &WeakThinPtr<dyn ObserverInternalFns>) {
+    fn remove_observer(&self, observer: &Weak<dyn ObserverInternalFns>) {
         self.observers.remove(observer);
+    }
+
+    fn get_unique_data_address(&self) -> *const () {
+        self.value.as_ptr() as _
     }
 }
 
 pub struct ObservablePtr<T: ?Sized + PartialEq + 'static> {
-    ptr: ThinPtr<ObservableData<T>>,
+    ptr: Rc<ObservableData<T>>,
 }
 
 impl<T: ?Sized + PartialEq + 'static> Clone for ObservablePtr<T> {
     fn clone(&self) -> Self {
         Self {
-            ptr: ThinPtr::clone(&self.ptr),
+            ptr: Rc::clone(&self.ptr),
         }
     }
 }
 
-#[derive(Clone)]
-pub struct ObservableRef<'a, T: ?Sized + PartialEq + 'static> {
-    ptr: NonNull<ObservableData<T>>,
-    _lifetime: PhantomData<&'a ()>,
+pub struct ObservableRef<'a, T: ?Sized + PartialEq + 'a> {
+    raw: Ref<'a, T>,
 }
 
-impl<'a, T: ?Sized + PartialEq + 'static> From<&ThinPtr<ObservableData<T>>>
-    for ObservableRef<'a, T>
-{
-    fn from(ptr: &ThinPtr<ObservableData<T>>) -> Self {
-        Self {
-            ptr: ptr.get_raw_ptr(),
-            _lifetime: PhantomData,
-        }
+impl<'a, T: ?Sized + PartialEq + 'a> From<Ref<'a, T>> for ObservableRef<'a, T> {
+    fn from(raw: Ref<'a, T>) -> Self {
+        Self { raw }
     }
 }
 
-impl<'a, T: ?Sized + PartialEq + 'static> Deref for ObservableRef<'a, T> {
+impl<'a, T: ?Sized + PartialEq + 'a> Deref for ObservableRef<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
-        let value_ptr = unsafe { self.ptr.as_ref() }.value.get();
-        unsafe { &*value_ptr }
+        &*self.raw
     }
 }
 
-impl<'a, T: ?Sized + PartialEq + 'static> Drop for ObservableRef<'a, T> {
-    fn drop(&mut self) {
-        unsafe {
-            let data = self.ptr.as_ref();
-            data.immutable_refs.set(data.immutable_refs.get() - 1);
-        }
-    }
+pub struct ObservableRefMut<'a, T: ?Sized + PartialEq + 'a> {
+    data: Rc<ObservableData<T>>,
+    raw: Option<RefMut<'a, T>>,
 }
 
-#[derive(Clone)]
-pub struct ObservableRefMut<'a, T: ?Sized + PartialEq + 'static> {
-    ptr: NonNull<ObservableData<T>>,
-    _lifetime: PhantomData<&'a ()>,
-}
-
-impl<'a, T: ?Sized + PartialEq + 'static> From<&ThinPtr<ObservableData<T>>>
-    for ObservableRefMut<'a, T>
-{
-    fn from(ptr: &ThinPtr<ObservableData<T>>) -> Self {
-        Self {
-            ptr: ptr.get_raw_ptr(),
-            _lifetime: PhantomData,
-        }
-    }
-}
-
-impl<'a, T: ?Sized + PartialEq + 'static> Deref for ObservableRefMut<'a, T> {
+impl<'a, T: ?Sized + PartialEq + 'a> Deref for ObservableRefMut<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
-        let value_ptr = unsafe { self.ptr.as_ref() }.value.get();
-        unsafe { &*value_ptr }
+        self.raw.as_deref().unwrap()
     }
 }
 
-impl<'a, T: ?Sized + PartialEq + 'static> DerefMut for ObservableRefMut<'a, T> {
+impl<'a, T: ?Sized + PartialEq + 'a> DerefMut for ObservableRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
-        let value_ptr = unsafe { self.ptr.as_ref() }.value.get();
-        unsafe { &mut *value_ptr }
+        self.raw.as_deref_mut().unwrap()
     }
 }
-
-impl<'a, T: ?Sized + PartialEq + 'static> Drop for ObservableRefMut<'a, T> {
+impl<'a, T: ?Sized + PartialEq + 'a> Drop for ObservableRefMut<'a, T> {
     fn drop(&mut self) {
-        unsafe {
-            let data = self.ptr.as_ref();
-            data.mutable_ref.set(false);
-            data.after_modified();
-        }
+        // Drop the reference so that observers notified of the changes can read the new data.
+        self.raw = None;
+        self.data.after_modified();
     }
 }
 
@@ -132,57 +99,34 @@ impl<T: PartialEq + 'static> ObservablePtr<T> {
     pub fn new(value: T) -> Self {
         let bx = ObservableData {
             observers: Default::default(),
-            immutable_refs: Cell::new(0),
-            mutable_ref: Cell::new(false),
-            value: UnsafeCell::new(value),
+            value: RefCell::new(value),
         };
-        let ptr = ThinPtr::new(bx);
+        let ptr = Rc::new(bx);
         Self { ptr }
     }
 
     pub fn borrow(&self) -> ObservableRef<T> {
-        if self.ptr.mutable_ref.get() {
-            panic!("Cannot borrow immutably while also borrowed mutably!");
-        }
-        self.ptr
-            .immutable_refs
-            .set(self.ptr.immutable_refs.get() + 1);
-        static_state::note_observed(ThinPtr::clone(&self.ptr) as _);
-        From::from(&self.ptr)
+        static_state::note_observed(Rc::clone(&self.ptr) as _);
+        From::from(self.ptr.value.borrow())
     }
 
     pub fn borrow_untracked(&self) -> ObservableRef<T> {
-        if self.ptr.mutable_ref.get() {
-            panic!("Cannot borrow immutably while also borrowed mutably!");
-        }
-        self.ptr
-            .immutable_refs
-            .set(self.ptr.immutable_refs.get() + 1);
-        From::from(&self.ptr)
-    }
-
-    fn reserve_mut_borrow(&self) {
-        if self.ptr.immutable_refs.get() > 0 {
-            panic!("Cannot borrow mutably when already borrowed immutably!");
-        }
-        if self.ptr.mutable_ref.get() {
-            panic!("Cannot borrow mutably more than once!");
-        }
-        self.ptr.mutable_ref.set(true);
+        From::from(self.ptr.value.borrow())
     }
 
     pub fn borrow_mut(&self) -> ObservableRefMut<T> {
-        self.reserve_mut_borrow();
-        From::from(&self.ptr)
+        ObservableRefMut {
+            data: Rc::clone(&self.ptr),
+            raw: Some(self.ptr.value.borrow_mut()),
+        }
     }
 
     pub fn set(&self, new_value: T) {
-        self.reserve_mut_borrow();
-        let value_storage = unsafe { &mut *self.ptr.value.get() };
+        let mut value_storage = self.ptr.value.borrow_mut();
         if new_value != *value_storage {
             *value_storage = new_value;
         }
-        self.ptr.mutable_ref.set(false);
+        drop(value_storage);
         self.ptr.after_modified();
     }
 }

@@ -25,11 +25,12 @@ fn shared_ptr_behavior() {
 fn update_immediate_derivation() {
     init_if_needed();
     let value = ObservablePtr::new(123);
-    let value2 = ObservablePtr::clone(&value);
+    // let value2 = ObservablePtr::clone(&value);
     let derived = DerivationPtr::new(move || *value.borrow() + 1);
-    assert_eq!(*derived.borrow_untracked(), 124);
-    value2.set(42);
-    assert_eq!(*derived.borrow_untracked(), 43);
+    drop(derived);
+    // assert_eq!(*derived.borrow_untracked(), 124);
+    // value2.set(42);
+    // assert_eq!(*derived.borrow_untracked(), 43);
 }
 
 #[test]
@@ -50,6 +51,19 @@ fn update_chained_derivation() {
     assert_eq!(*value2.borrow_untracked(), 10);
     assert_eq!(*deriveda2.borrow_untracked(), 11);
     assert_eq!(*derivedb.borrow_untracked(), 12);
+}
+
+#[test]
+fn subscribe_then_drop() {
+    init_if_needed();
+    let value = ObservablePtr::new(0);
+    let value2 = ObservablePtr::clone(&value);
+    let deriveda1 = DerivationPtr::new(move || *value.borrow() + 1);
+    let deriveda2 = DerivationPtr::clone(&deriveda1);
+    let derivedb = DerivationPtr::new(move || *deriveda1.borrow() + 1);
+    drop(derivedb);
+    value2.set(10);
+    assert_eq!(*deriveda2.borrow_untracked(), 11);
 }
 
 #[test]

@@ -1,6 +1,10 @@
-use crate::{observable::ObservableInternalFns, ptr::ThinPtr};
+use crate::observable::ObservableInternalFns;
 use crossbeam::atomic::AtomicCell;
-use std::thread::{self, ThreadId};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    thread::{self, ThreadId},
+};
 
 // This might mistakenly be accessed from more than one thread. To guarantee that we correctly
 // generate an error (and therefore prevent UB later on) we use guaranteed safe types.
@@ -10,7 +14,9 @@ static MAIN_THREAD: AtomicCell<Option<ThreadId>> = AtomicCell::new(None);
 // https://stackoverflow.com/questions/37060330/safe-way-to-push-the-local-value-into-a-static-mut
 // static mut is safe if you are only ever accessing it from a single thread and if it is impossible
 // to hold more than one mutable reference at a time, check for reentrance!
-static mut OBSERVING_STACK: Vec<Vec<ThinPtr<dyn ObservableInternalFns>>> = Vec::new();
+std::thread_local! {
+    static OBSERVING_STACK: RefCell<Vec<Vec<Rc<dyn ObservableInternalFns>>>> = RefCell::new(Vec::new());
+}
 
 pub fn init() {
     if MAIN_THREAD.load().is_some() {
@@ -49,23 +55,29 @@ fn assert_static_state_access() {
 
 pub(crate) fn push_observing_stack() {
     assert_static_state_access();
-    unsafe { OBSERVING_STACK.push(Vec::new()) }
+    OBSERVING_STACK.with(|stack| stack.borrow_mut().push(Vec::new()));
 }
 
-pub(crate) fn note_observed(observable: ThinPtr<dyn ObservableInternalFns>) {
+pub(crate) fn note_observed(observable: Rc<dyn ObservableInternalFns>) {
     assert_static_state_access();
-    if let Some(item) = unsafe { OBSERVING_STACK.last_mut() } {
-        item.push(observable);
-    } else {
-        panic!(
+    OBSERVING_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        if let Some(item) = stack.last_mut() {
+            let uda = observable.get_unique_data_address();
+            if !item.iter().any(|item| item.get_unique_data_address() == uda) {
+                item.push(observable);
+            }
+        } else {
+            panic!(
             "Observable borrowed outside of derivation. Did you mean to use borrow_untracked()?"
         );
-    }
+        }
+    });
 }
 
-pub(crate) fn pop_observing_stack() -> Vec<ThinPtr<dyn ObservableInternalFns>> {
+pub(crate) fn pop_observing_stack() -> Vec<Rc<dyn ObservableInternalFns>> {
     assert_static_state_access();
-    let top = unsafe { OBSERVING_STACK.pop() };
+    let top = OBSERVING_STACK.with(|stack| stack.borrow_mut().pop());
     if let Some(value) = top {
         value
     } else {
