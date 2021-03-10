@@ -73,9 +73,13 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> ObserverInternalFns
 {
     /// Called when a value this observer depends on becomes stale.
     fn send_stale(&self) {
-        self.num_stale_notifications
-            .set(self.num_stale_notifications.get() + 1);
-        self.observers.broadcast_stale();
+        let old = self
+            .num_stale_notifications
+            .replace(self.num_stale_notifications.get() + 1);
+        // Don't send multiple stale notifications when we receive multiple stale notifications.
+        if old == 0 {
+            self.observers.broadcast_stale();
+        }
     }
 
     /// Called when a value this observer depends on finishes updating. `changed` is false if the
@@ -85,8 +89,12 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> ObserverInternalFns
         self.num_stale_notifications.set(nsn);
         let should_update = self.should_update.get() || changed;
         self.should_update.set(should_update);
-        if nsn == 0 && should_update {
-            self.update();
+        if nsn == 0 {
+            if should_update {
+                self.update();
+            } else {
+                self.observers.broadcast_ready(false);
+            }
         }
     }
 

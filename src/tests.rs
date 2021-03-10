@@ -25,12 +25,11 @@ fn shared_ptr_behavior() {
 fn update_immediate_derivation() {
     init_if_needed();
     let value = ObservablePtr::new(123);
-    // let value2 = ObservablePtr::clone(&value);
+    let value2 = ObservablePtr::clone(&value);
     let derived = DerivationPtr::new(move || *value.borrow() + 1);
-    drop(derived);
-    // assert_eq!(*derived.borrow_untracked(), 124);
-    // value2.set(42);
-    // assert_eq!(*derived.borrow_untracked(), 43);
+    assert_eq!(*derived.borrow_untracked(), 124);
+    value2.set(42);
+    assert_eq!(*derived.borrow_untracked(), 43);
 }
 
 #[test]
@@ -125,6 +124,40 @@ fn conditionally_observe_second_observable() {
     second2.set(5);
     assert_eq!(num_updates2.get(), 3);
     assert_eq!(*result.borrow_untracked(), 5);
+}
+
+#[test]
+fn fork_and_join() {
+    init_if_needed();
+    let value = ObservablePtr::new(123);
+
+    let left = {
+        ptr_clone!(value);
+        DerivationPtr::new(move || *value.borrow())
+    };
+    let right = {
+        ptr_clone!(value);
+        DerivationPtr::new(move || *value.borrow())
+    };
+    let joined = {
+        ptr_clone!(left, right);
+        DerivationPtr::new(move || *left.borrow() + *right.borrow())
+    };
+    let num_updates = Rc::new(Cell::new(0));
+    let num_updates2 = Rc::clone(&num_updates);
+    let after = {
+        ptr_clone!(joined);
+        DerivationPtr::new(move || {
+            let old = num_updates.get();
+            num_updates.set(old + 1);
+            *joined.borrow()
+        })
+    };
+    assert_eq!(num_updates2.get(), 1);
+    assert_eq!(*after.borrow_untracked(), 123 * 2);
+    value.set(42);
+    assert_eq!(num_updates2.get(), 2);
+    assert_eq!(*after.borrow_untracked(), 42 * 2);
 }
 
 #[test]

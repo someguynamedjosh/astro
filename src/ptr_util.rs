@@ -62,8 +62,28 @@ macro_rules! __expr_result_name {
 }
 
 #[macro_export]
-macro_rules! ptr_clone {
-    ($($($ex:tt)*),+) => {
+macro_rules! __ptr_clone {
+    ($(($($ex:tt)*)),+) => {
         $(let __expr_result_name!($($ex)*) = crate::ptr_util::PtrUtil::ptr_clone(&$($ex)*);)+
     };
+}
+
+#[macro_export]
+macro_rules! __ptr_clone_parse {
+    ([$($args:tt)*], ($($wip:tt)*), , $($rest:tt)*) => {
+        __ptr_clone_parse!([$($args)* ($($wip)*)], (), $($rest)*)
+    };
+    ([$($args:tt)*], ($($wip:tt)*), $next:tt $($rest:tt)*) => {
+        __ptr_clone_parse!([$($args)*], ($($wip)*$next), $($rest)*)
+    };
+    ([$($args:tt)*], ($($wip:tt)*),) => {
+        __ptr_clone!(($($wip)*) $(,$args)*)
+    };
+}
+
+#[macro_export]
+macro_rules! ptr_clone {
+    ($($ex:tt)+) => {
+        __ptr_clone_parse!([], (), $($ex)+)
+    }
 }
