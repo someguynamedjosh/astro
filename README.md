@@ -1,6 +1,6 @@
 # Observatory
 
-[![Latest version on crates.io](https://img.shields.io/crates/v/observatory)(https://crates.io/crates/observatory)]
+[![Latest version on crates.io](https://img.shields.io/crates/v/observatory)](https://crates.io/crates/observatory)
 
 Provides MobX style observables. Example:
 
