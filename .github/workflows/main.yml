@@ -18,9 +18,9 @@ jobs:
     - uses: actions/checkout@v2
     - name: Use nightly compiler.
       run: |
+        rustup default nightly-2021-03-09
         rustup component add miri
         rustup component add clippy
-        rustup default nightly
     - name: Run tests for debug
       run: |
         cargo test -- --test-threads=1

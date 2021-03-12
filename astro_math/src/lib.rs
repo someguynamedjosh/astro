@@ -5,18 +5,27 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, S
 pub struct Transform {
     pub xx: f32,
     pub yx: f32,
+    pub ix: f32,
     pub xy: f32,
     pub yy: f32,
+    pub iy: f32,
 }
 
 impl Transform {
-    // Left to right, then top to bottom.
-    pub const fn new(xx: f32, yx: f32, xy: f32, yy: f32) -> Self {
-        Self { xx, yx, xy, yy }
+    // Left to right, then top to bottom, like a 2 row 3 col matrix.
+    pub const fn new(xx: f32, yx: f32, ix: f32, xy: f32, yy: f32, iy: f32) -> Self {
+        Self {
+            xx,
+            yx,
+            ix,
+            xy,
+            yy,
+            iy,
+        }
     }
 
     pub const fn identity() -> Self {
-        Self::new(1.0, 0.0, 0.0, 1.0)
+        Self::new(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
     }
 }
 
