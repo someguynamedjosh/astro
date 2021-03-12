@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use astro_math::*;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Color {
@@ -11,6 +11,7 @@ pub struct Color {
 
 impl Color {
     pub const BLACK: Color = Self::from_packed(0x000000_FF);
+    pub const MAGENTA: Color = Self::from_packed(0xFF00FF_FF);
     pub const WHITE: Color = Self::from_packed(0xFFFFFF_FF);
 
     pub const fn from_packed(packed: u32) -> Self {
@@ -33,7 +34,7 @@ pub enum RenderCommand {
     Clear(FillMode),
     DrawRect {
         transform: Transform,
-        top_left: Position,
+        top_left: Point,
         size: Size,
         fill: FillMode,
     },
@@ -75,16 +76,42 @@ impl LayerGroup {
             self.subgroups.insert(height, vec![subgroup]);
         }
     }
+
+    fn flatten(self) -> Vec<Layer> {
+        let mut result = Vec::new();
+        self.flatten_into(&mut result);
+        result
+    }
+
+    fn flatten_into(mut self, target: &mut Vec<Layer>) {
+        let mut all_layer_indexes = HashSet::new();
+        for &key in self.layers.keys() {
+            all_layer_indexes.insert(key);
+        }
+        for &key in self.subgroups.keys() {
+            all_layer_indexes.insert(key);
+        }
+        let mut sorted_layer_indexes: Vec<_> = all_layer_indexes.into_iter().collect();
+        sorted_layer_indexes.sort();
+        for index in sorted_layer_indexes {
+            self.layers.remove(&index).map(|layer| target.push(layer));
+            if let Some(subgroups) = self.subgroups.remove(&index) {
+                for subgroup in subgroups {
+                    subgroup.flatten_into(target);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
-struct RenderContextState {
+struct DrawContextState {
     transform: Transform,
     fill_mode: FillMode,
     layer: i8,
 }
 
-impl RenderContextState {
+impl DrawContextState {
     fn new() -> Self {
         Self {
             transform: Transform::identity(),
@@ -94,18 +121,18 @@ impl RenderContextState {
     }
 }
 
-pub struct RenderContext {
+pub struct DrawContext {
     layer_group_stack: Vec<(i8, LayerGroup)>,
-    state_stack: Vec<RenderContextState>,
-    state: RenderContextState,
+    state_stack: Vec<DrawContextState>,
+    state: DrawContextState,
 }
 
-impl RenderContext {
+impl DrawContext {
     fn new() -> Self {
         Self {
             layer_group_stack: vec![(0, LayerGroup::new())],
             state_stack: Vec::new(),
-            state: RenderContextState::new(),
+            state: DrawContextState::new(),
         }
     }
 
@@ -124,6 +151,27 @@ impl RenderContext {
 
     pub fn set_transform(&mut self, new: Transform) {
         self.state.transform = new;
+    }
+
+    pub fn translate(&mut self, offset: impl Into<Point>) {
+        self.state.transform = self.state.transform.translated(offset.into());
+    }
+
+    pub fn draw_child<C: GuiConfig>(
+        &mut self,
+        child: &impl RenderWidget<C>,
+        offset: impl Into<Point>,
+    ) {
+        let old_stack_size = self.get_state_stack_size();
+        let old_layer_stack_size = self.get_layer_group_stack_size();
+
+        self.push_state();
+        self.translate(offset);
+        child.draw(self);
+        self.pop_state();
+
+        debug_assert_eq!(old_stack_size, self.get_state_stack_size());
+        debug_assert_eq!(old_layer_stack_size, self.get_layer_group_stack_size());
     }
 
     pub fn set_fill_mode(&mut self, new: FillMode) {
@@ -172,7 +220,9 @@ impl RenderContext {
         self.do_command(command);
     }
 
-    pub fn draw_rect(&mut self, top_left: Position, size: Size) {
+    pub fn draw_rect(&mut self, top_left: impl Into<Point>, size: impl Into<Size>) {
+        let top_left = top_left.into();
+        let size = size.into();
         let command = RenderCommand::DrawRect {
             transform: self.state.transform.clone(),
             top_left,
@@ -195,6 +245,7 @@ pub struct SizeConstraint {
 
 pub trait RenderWidget<C: GuiConfig> {
     fn layout(&mut self, constraint: SizeConstraint) -> Size;
+    fn draw(&self, drawer: &mut DrawContext);
 }
 
 pub enum Alignment {
@@ -213,7 +264,7 @@ pub use Alignment::Start as Top;
 pub struct AlignBox<W> {
     pub horizontal: Alignment,
     pub vertical: Alignment,
-    child_pos: Position,
+    child_pos: Point,
     child: W,
 }
 
@@ -225,5 +276,20 @@ impl<C: GuiConfig, W: RenderWidget<C>> RenderWidget<C> for AlignBox<W> {
         });
         self.child_pos = (constraint.max - child_size) / 2;
         constraint.max
+    }
+
+    fn draw(&self, drawer: &mut DrawContext) {}
+}
+
+pub struct DebugRect {}
+
+impl<C: GuiConfig> RenderWidget<C> for DebugRect {
+    fn layout(&mut self, constraint: SizeConstraint) -> Size {
+        Size::new(100.0, 100.0)
+    }
+
+    fn draw(&self, drawer: &mut DrawContext) {
+        drawer.fill_solid_color(Color::MAGENTA);
+        drawer.draw_rect(0, (100, 100));
     }
 }
