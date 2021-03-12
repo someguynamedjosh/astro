@@ -2,5 +2,6 @@
 
 members = [
     "observatory",
-    "astro-gui",
+    "astro_gui",
+    "astro_math",
 ]
