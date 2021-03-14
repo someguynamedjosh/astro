@@ -40,9 +40,15 @@ pub enum RenderCommand {
     },
 }
 
-#[derive(Default)]
-struct Layer {
+#[derive(Default, Debug)]
+pub struct Layer {
     command_buffer: Vec<RenderCommand>,
+}
+
+impl Layer {
+    pub fn borrow_commands(&self) -> &[RenderCommand] {
+        &self.command_buffer[..]
+    }
 }
 
 struct LayerGroup {
@@ -231,6 +237,11 @@ impl DrawContext {
         };
         self.do_command(command);
     }
+
+    fn finalize(self) -> LayerGroup {
+        debug_assert_eq!(self.layer_group_stack.len(), 1);
+        self.layer_group_stack.into_iter().next().unwrap().1
+    }
 }
 
 pub trait GuiConfig {
@@ -268,6 +279,20 @@ pub struct AlignBox<W> {
     child: W,
 }
 
+impl<W> AlignBox<W> {
+    pub fn new<C: GuiConfig>(horizontal: Alignment, vertical: Alignment, child: W) -> Self
+    where
+        W: RenderWidget<C>,
+    {
+        Self {
+            horizontal,
+            vertical,
+            child_pos: 0.into(),
+            child,
+        }
+    }
+}
+
 impl<C: GuiConfig, W: RenderWidget<C>> RenderWidget<C> for AlignBox<W> {
     fn layout(&mut self, constraint: SizeConstraint) -> Size {
         let child_size = self.child.layout(SizeConstraint {
@@ -278,18 +303,43 @@ impl<C: GuiConfig, W: RenderWidget<C>> RenderWidget<C> for AlignBox<W> {
         constraint.max
     }
 
-    fn draw(&self, drawer: &mut DrawContext) {}
+    fn draw(&self, drawer: &mut DrawContext) {
+        drawer.draw_child(&self.child, self.child_pos);
+    }
 }
 
 pub struct DebugRect {}
 
 impl<C: GuiConfig> RenderWidget<C> for DebugRect {
-    fn layout(&mut self, constraint: SizeConstraint) -> Size {
+    fn layout(&mut self, _constraint: SizeConstraint) -> Size {
         Size::new(100.0, 100.0)
     }
 
     fn draw(&self, drawer: &mut DrawContext) {
         drawer.fill_solid_color(Color::MAGENTA);
         drawer.draw_rect(0, (100, 100));
+    }
+}
+
+pub struct GuiDrawer {}
+
+impl GuiDrawer {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn layout<C: GuiConfig, R: RenderWidget<C>>(&self, widget: &mut R) {
+        let screen_size = Size::new(800.0, 600.0);
+        let screen_constraint = SizeConstraint {
+            min: screen_size,
+            max: screen_size,
+        };
+        widget.layout(screen_constraint);
+    }
+
+    pub fn draw<C: GuiConfig, R: RenderWidget<C>>(&self, widget: &R) -> Vec<Layer> {
+        let mut context = DrawContext::new();
+        widget.draw(&mut context);
+        context.finalize().flatten()
     }
 }

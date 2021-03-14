@@ -1,7 +1,8 @@
 [workspace]
 
 members = [
-    "observatory",
     "astro_gui",
     "astro_math",
+    "example",
+    "observatory",
 ]
