@@ -54,11 +54,11 @@
 //! ```
 //! Notice the use of `borrow_untracked` in the previous example. The normal `ObservablePtr::borrow`
 //! is intended to be called from within the body of a derivation and as such will panic outside of
-//! that environment. 
+//! that environment.
 //! ## Derivations
-//! Derivations themselves are a kind of observable, as their result can be 
+//! Derivations themselves are a kind of observable, as their result can be
 //! observed. However, they do not have `set` or `borrow_mut` functions. Instead, a single function
-//! is specified which computes the value the derivation should have. This function is then 
+//! is specified which computes the value the derivation should have. This function is then
 //! automatically re-run whenever any of the observables it had borrowed have changed. Here is an
 //! example of a derivation:
 //! ```rust
@@ -92,9 +92,9 @@
 //! ```
 //! The `DerivationPtr` struct has two template parameters, one for the return type and another for
 //! the type of the function. Because of this, it is not directly possible to store these pointers
-//! in a struct or in a vector. To solve this, the function type can be made to be 
+//! in a struct or in a vector. To solve this, the function type can be made to be
 //! `Box<dyn FnMut() -> T>`, but this would introduce a lot of boilerplate. This is handled for you
-//! if you use `derivation_dyn` or `o::derivation_with_pointers_dyn` and the type 
+//! if you use `derivation_dyn` or `o::derivation_with_pointers_dyn` and the type
 //! alias `DerivationDynPtr<T>`:
 //! ```rust
 //! use observatory as o;
@@ -121,21 +121,22 @@ mod tests;
 
 pub use observable::ObservablePtr;
 pub use observer::DerivationPtr;
+pub use observer::IsUnchanged;
 pub use static_state::{init, is_initialized};
 
 pub type DerivationDynPtr<T> = DerivationPtr<T, Box<dyn FnMut() -> T + 'static>>;
 
-pub fn observable<T: PartialEq + 'static>(value: T) -> ObservablePtr<T> {
+pub fn observable<T: 'static>(value: T) -> ObservablePtr<T> {
     ObservablePtr::new(value)
 }
 
-pub fn derivation<T: PartialEq + 'static, F: FnMut() -> T + 'static>(
+pub fn derivation<T: IsUnchanged + 'static, F: FnMut() -> T + 'static>(
     compute_value: F,
 ) -> DerivationPtr<T, F> {
     DerivationPtr::new(compute_value)
 }
 
-pub fn derivation_dyn<T: PartialEq + 'static, F: FnMut() -> T + 'static>(
+pub fn derivation_dyn<T: IsUnchanged + 'static, F: FnMut() -> T + 'static>(
     compute_value: F,
 ) -> DerivationDynPtr<T> {
     DerivationPtr::new_dyn(compute_value)
