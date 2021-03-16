@@ -1,17 +1,17 @@
-use crate::{DerivationPtr, ObservablePtr};
+use crate::{DerivationPtr, IsUnchanged, ObservablePtr};
 
 #[doc(hidden)]
 pub trait PtrUtil {
     fn ptr_clone(&self) -> Self;
 }
 
-impl<T: ?Sized + PartialEq + 'static> PtrUtil for ObservablePtr<T> {
+impl<T: ?Sized + IsUnchanged + 'static> PtrUtil for ObservablePtr<T> {
     fn ptr_clone(&self) -> Self {
         Self::clone(&self)
     }
 }
 
-impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> PtrUtil for DerivationPtr<T, F> {
+impl<T: IsUnchanged + 'static, F: FnMut() -> T + 'static> PtrUtil for DerivationPtr<T, F> {
     fn ptr_clone(&self) -> Self {
         Self::clone(&self)
     }
