@@ -2,7 +2,7 @@
 name = "observatory"
 description = "MobX style observables"
 repository = "https://github.com/joshua-maros/astro"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Joshua Maros <60271685+joshua-maros@users.noreply.github.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"

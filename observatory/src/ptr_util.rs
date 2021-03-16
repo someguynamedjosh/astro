@@ -1,4 +1,5 @@
 use crate::{DerivationPtr, IsUnchanged, ObservablePtr};
+use std::{rc::Rc, sync::Arc};
 
 #[doc(hidden)]
 pub trait PtrUtil {
@@ -14,6 +15,18 @@ impl<T: ?Sized + IsUnchanged + 'static> PtrUtil for ObservablePtr<T> {
 impl<T: IsUnchanged + 'static, F: FnMut() -> T + 'static> PtrUtil for DerivationPtr<T, F> {
     fn ptr_clone(&self) -> Self {
         Self::clone(&self)
+    }
+}
+
+impl<T: ?Sized> PtrUtil for Rc<T> {
+    fn ptr_clone(&self) -> Self {
+        Rc::clone(&self)
+    }
+}
+
+impl<T: ?Sized> PtrUtil for Arc<T> {
+    fn ptr_clone(&self) -> Self {
+        Arc::clone(&self)
     }
 }
 
