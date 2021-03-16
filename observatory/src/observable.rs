@@ -27,7 +27,7 @@ impl<T: ?Sized> ObservableData<T> {
     }
 }
 
-impl<T: PartialEq> ObservableInternalFns for ObservableData<T> {
+impl<T> ObservableInternalFns for ObservableData<T> {
     fn add_observer(&self, observer: Weak<dyn ObserverInternalFns>) {
         self.observers.add(observer);
     }
@@ -41,11 +41,11 @@ impl<T: PartialEq> ObservableInternalFns for ObservableData<T> {
     }
 }
 
-pub struct ObservablePtr<T: ?Sized + PartialEq + 'static> {
+pub struct ObservablePtr<T: ?Sized + 'static> {
     ptr: Rc<ObservableData<T>>,
 }
 
-impl<T: ?Sized + PartialEq + 'static> Clone for ObservablePtr<T> {
+impl<T: ?Sized + 'static> Clone for ObservablePtr<T> {
     fn clone(&self) -> Self {
         Self {
             ptr: Rc::clone(&self.ptr),
@@ -53,41 +53,41 @@ impl<T: ?Sized + PartialEq + 'static> Clone for ObservablePtr<T> {
     }
 }
 
-pub struct ObservableRef<'a, T: ?Sized + PartialEq + 'a> {
+pub struct ObservableRef<'a, T: ?Sized + 'a> {
     raw: Ref<'a, T>,
 }
 
-impl<'a, T: ?Sized + PartialEq + 'a> From<Ref<'a, T>> for ObservableRef<'a, T> {
+impl<'a, T: ?Sized + 'a> From<Ref<'a, T>> for ObservableRef<'a, T> {
     fn from(raw: Ref<'a, T>) -> Self {
         Self { raw }
     }
 }
 
-impl<'a, T: ?Sized + PartialEq + 'a> Deref for ObservableRef<'a, T> {
+impl<'a, T: ?Sized + 'a> Deref for ObservableRef<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
         &*self.raw
     }
 }
 
-pub struct ObservableRefMut<'a, T: ?Sized + PartialEq + 'a> {
+pub struct ObservableRefMut<'a, T: ?Sized + 'a> {
     data: Rc<ObservableData<T>>,
     raw: Option<RefMut<'a, T>>,
 }
 
-impl<'a, T: ?Sized + PartialEq + 'a> Deref for ObservableRefMut<'a, T> {
+impl<'a, T: ?Sized + 'a> Deref for ObservableRefMut<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.raw.as_deref().unwrap()
     }
 }
 
-impl<'a, T: ?Sized + PartialEq + 'a> DerefMut for ObservableRefMut<'a, T> {
+impl<'a, T: ?Sized + 'a> DerefMut for ObservableRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.raw.as_deref_mut().unwrap()
     }
 }
-impl<'a, T: ?Sized + PartialEq + 'a> Drop for ObservableRefMut<'a, T> {
+impl<'a, T: ?Sized + 'a> Drop for ObservableRefMut<'a, T> {
     fn drop(&mut self) {
         // Drop the reference so that observers notified of the changes can read the new data.
         self.raw = None;
@@ -95,7 +95,7 @@ impl<'a, T: ?Sized + PartialEq + 'a> Drop for ObservableRefMut<'a, T> {
     }
 }
 
-impl<T: PartialEq + 'static> ObservablePtr<T> {
+impl<T: 'static> ObservablePtr<T> {
     pub fn new(value: T) -> Self {
         let bx = ObservableData {
             observers: Default::default(),
@@ -123,9 +123,7 @@ impl<T: PartialEq + 'static> ObservablePtr<T> {
 
     pub fn set(&self, new_value: T) {
         let mut value_storage = self.ptr.value.borrow_mut();
-        if new_value != *value_storage {
-            *value_storage = new_value;
-        }
+        *value_storage = new_value;
         drop(value_storage);
         self.ptr.after_modified();
     }

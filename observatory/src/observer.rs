@@ -4,6 +4,18 @@ use std::{
     rc::{Rc, Weak},
 };
 
+pub trait IsUnchanged {
+    fn is_unchanged(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
+impl<T: PartialEq> IsUnchanged for T {
+    fn is_unchanged(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
 pub(crate) trait ObserverInternalFns {
     fn send_stale(&self);
     fn send_ready(&self, changed: bool);
@@ -56,7 +68,7 @@ impl ObserverList {
 }
 
 #[repr(C)]
-struct DerivationData<T: PartialEq + 'static, F: FnMut() -> T + 'static> {
+struct DerivationData<T: IsUnchanged + 'static, F: FnMut() -> T + 'static> {
     this_ptr: Weak<dyn ObserverInternalFns>,
     observers: ObserverList,
     observing: Cell<Vec<Rc<dyn ObservableInternalFns>>>,
@@ -68,7 +80,7 @@ struct DerivationData<T: PartialEq + 'static, F: FnMut() -> T + 'static> {
     value: RefCell<T>,
 }
 
-impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> ObserverInternalFns
+impl<T: IsUnchanged + 'static, F: FnMut() -> T + 'static> ObserverInternalFns
     for DerivationData<T, F>
 {
     /// Called when a value this observer depends on becomes stale.
@@ -128,7 +140,7 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> ObserverInternalFns
         }
         self.observing.set(now_observing);
 
-        let changed = new_value != *self.value.borrow();
+        let changed = !self.value.borrow().is_unchanged(&new_value);
         if changed {
             self.value.replace(new_value);
         }
@@ -141,7 +153,7 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> ObserverInternalFns
     }
 }
 
-impl<T: PartialEq, F: FnMut() -> T> Drop for DerivationData<T, F> {
+impl<T: IsUnchanged, F: FnMut() -> T> Drop for DerivationData<T, F> {
     fn drop(&mut self) {
         for observable in self.observing.take() {
             observable.remove_observer(&self.this_ptr);
@@ -149,7 +161,7 @@ impl<T: PartialEq, F: FnMut() -> T> Drop for DerivationData<T, F> {
     }
 }
 
-impl<T: PartialEq, F: FnMut() -> T> ObservableInternalFns for DerivationData<T, F> {
+impl<T: IsUnchanged, F: FnMut() -> T> ObservableInternalFns for DerivationData<T, F> {
     fn add_observer(&self, observer: Weak<dyn ObserverInternalFns>) {
         self.observers.add(observer);
     }
@@ -163,11 +175,11 @@ impl<T: PartialEq, F: FnMut() -> T> ObservableInternalFns for DerivationData<T, 
     }
 }
 
-pub struct DerivationPtr<T: PartialEq + 'static, F: FnMut() -> T + 'static> {
+pub struct DerivationPtr<T: IsUnchanged + 'static, F: FnMut() -> T + 'static> {
     ptr: Rc<DerivationData<T, F>>,
 }
 
-impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> Clone for DerivationPtr<T, F> {
+impl<T: IsUnchanged + 'static, F: FnMut() -> T + 'static> Clone for DerivationPtr<T, F> {
     fn clone(&self) -> Self {
         Self {
             ptr: Rc::clone(&self.ptr),
@@ -175,7 +187,7 @@ impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> Clone for DerivationPtr<
     }
 }
 
-impl<T: PartialEq + 'static, F: FnMut() -> T + 'static> DerivationPtr<T, F> {
+impl<T: IsUnchanged + 'static, F: FnMut() -> T + 'static> DerivationPtr<T, F> {
     pub fn new(mut compute_value: F) -> Self {
         static_state::push_observing_stack();
         let initial_value = compute_value();
