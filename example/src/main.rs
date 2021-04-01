@@ -7,8 +7,8 @@ impl GuiConfig for Config {
 }
 
 fn main() {
-    let dbox = DebugRect {};
-    let mut root = AlignBox::new::<Config>(Left, Top, dbox);
+    let list = Column::new::<Config>(vec![DebugRect, DebugRect, DebugRect]);
+    let mut root = AlignBox::new::<Config>(Center, Middle, list);
     let drawer = astro_gui::GuiDrawer::new();
     drawer.layout::<Config, _>(&mut root);
     let commands = drawer.draw::<Config, _>(&root);

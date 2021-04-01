@@ -254,6 +254,38 @@ pub struct SizeConstraint {
     pub max: Size,
 }
 
+impl SizeConstraint {
+    pub fn with_min(self, min: impl Into<Size>) -> Self {
+        Self {
+            min: min.into(),
+            max: self.max,
+        }
+    }
+
+    pub fn with_min_width(self, value: f32) -> Self {
+        self.with_min((value, self.min.y))
+    }
+
+    pub fn with_min_height(self, value: f32) -> Self {
+        self.with_min((self.min.x, value))
+    }
+
+    pub fn with_max(self, max: impl Into<Size>) -> Self {
+        Self {
+            min: self.min,
+            max: max.into(),
+        }
+    }
+
+    pub fn with_max_width(self, value: f32) -> Self {
+        self.with_max((value, self.max.y))
+    }
+
+    pub fn with_max_height(self, value: f32) -> Self {
+        self.with_max((self.max.x, value))
+    }
+}
+
 pub trait RenderWidget<C: GuiConfig> {
     fn layout(&mut self, constraint: SizeConstraint) -> Size;
     fn draw(&self, drawer: &mut DrawContext);
@@ -295,11 +327,18 @@ impl<W> AlignBox<W> {
 
 impl<C: GuiConfig, W: RenderWidget<C>> RenderWidget<C> for AlignBox<W> {
     fn layout(&mut self, constraint: SizeConstraint) -> Size {
-        let child_size = self.child.layout(SizeConstraint {
-            min: 0.into(),
-            max: constraint.max,
-        });
-        self.child_pos = (constraint.max - child_size) / 2;
+        let child_size = self.child.layout(constraint.with_min(0));
+        println!("{:?}", child_size);
+        self.child_pos.x = match self.horizontal {
+            Alignment::Start => 0.0,
+            Alignment::Middle => (constraint.max.x - child_size.x) / 2.0,
+            Alignment::End => (constraint.max.x - child_size.x) / 2.0,
+        };
+        self.child_pos.y = match self.vertical {
+            Alignment::Start => 0.0,
+            Alignment::Middle => (constraint.max.y - child_size.y) / 2.0,
+            Alignment::End => (constraint.max.y - child_size.y) / 2.0,
+        };
         constraint.max
     }
 
@@ -308,7 +347,7 @@ impl<C: GuiConfig, W: RenderWidget<C>> RenderWidget<C> for AlignBox<W> {
     }
 }
 
-pub struct DebugRect {}
+pub struct DebugRect;
 
 impl<C: GuiConfig> RenderWidget<C> for DebugRect {
     fn layout(&mut self, _constraint: SizeConstraint) -> Size {
@@ -321,7 +360,46 @@ impl<C: GuiConfig> RenderWidget<C> for DebugRect {
     }
 }
 
-pub struct GuiDrawer {}
+pub struct Column<W> {
+    children: Vec<(f32, W)>,
+}
+
+impl<W> Column<W> {
+    pub fn new<C>(children: Vec<W>) -> Self
+    where
+        C: GuiConfig,
+        W: RenderWidget<C>,
+    {
+        Self {
+            children: children.into_iter().map(|child| (0.0, child)).collect(),
+        }
+    }
+}
+
+impl<C: GuiConfig, W: RenderWidget<C>> RenderWidget<C> for Column<W> {
+    fn layout(&mut self, constraint: SizeConstraint) -> Size {
+        let mut width = constraint.min.x;
+        let mut total_height = 0.0;
+        let child_constraint = constraint.with_max_height(std::f32::INFINITY);
+        for (height, child) in self.children.iter_mut() {
+            let child_size = child.layout(child_constraint);
+            *height = child_size.y;
+            total_height += *height;
+            width = width.max(child_size.x);
+        }
+        Size::new(width, total_height)
+    }
+
+    fn draw(&self, drawer: &mut DrawContext) {
+        let mut offset = 0.0;
+        for (height, child) in self.children.iter() {
+            drawer.draw_child(child, (0.0, offset));
+            offset += *height;
+        }
+    }
+}
+
+pub struct GuiDrawer;
 
 impl GuiDrawer {
     pub fn new() -> Self {
